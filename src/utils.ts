@@ -20,6 +20,7 @@ export function saveGameState(state: any): void {
       purchasedItems: Array.from(state.purchasedItems || []),
       periodicTimers: state.periodicTimers || {},
       activeSkills: state.activeSkills || {},
+      itemLevels: state.itemLevels || {},
     };
     localStorage.setItem('duckClickerGame', JSON.stringify(stateToSave));
   } catch (error) {

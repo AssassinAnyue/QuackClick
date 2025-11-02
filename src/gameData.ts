@@ -1,22 +1,22 @@
 import { DuckStage, SpecialItem } from './types';
 
-// 15个阶段的升级成本（每阶段5次升级，成本×1.6）
+// 15个阶段的升级成本（每阶段5次升级，成本×1.6，全部×0.3）
 export const UPGRADE_COSTS: Record<DuckStage, number[]> = {
-  '鴨蛋': [15, 24, 38, 61, 98],
-  '黃鴨': [150, 240, 384, 614, 983],
-  '白鴨': [1200, 1920, 3072, 4915, 7864],
-  '成年鴨': [9000, 14400, 23040, 36864, 58982],
-  '至聖先鴨': [60000, 96000, 153600, 245760, 393216],
-  '天啟鴨': [350000, 560000, 896000, 1433600, 2293760],
-  '星界鴨': [2000000, 3200000, 5120000, 8192000, 13107200],
-  '混沌鴨': [12000000, 19200000, 30720000, 49152000, 78643200],
-  '永恆鴨': [70000000, 112000000, 179200000, 286720000, 458752000],
-  '超鴨神體': [400000000, 640000000, 1024000000, 1638400000, 2621440000],
-  '鴨界意志': [2300000000, 3680000000, 5888000000, 9420800000, 15073280000],
-  '原初之鴨': [12000000000, 19200000000, 30720000000, 49152000000, 78643200000],
-  '鴨神皇': [65000000000, 104000000000, 166400000000, 266240000000, 425984000000],
-  '多元鴨體': [350000000000, 560000000000, 896000000000, 1433600000000, 2293760000000],
-  '絕對鴨': [2000000000000, 3200000000000, 5120000000000, 8192000000000, 13107200000000]
+  '鴨蛋': [5, 8, 13, 20, 32],
+  '黃鴨': [50, 80, 128, 205, 328],
+  '白鴨': [400, 640, 1024, 1638, 2621],
+  '成年鴨': [3000, 4800, 7680, 12288, 19661],
+  '至聖先鴨': [20000, 32000, 51200, 81920, 131072],
+  '天啟鴨': [116667, 186667, 298667, 477867, 764587],
+  '星界鴨': [666667, 1066667, 1706667, 2730667, 4369067],
+  '混沌鴨': [4000000, 6400000, 10240000, 16384000, 26214400],
+  '永恆鴨': [23333333, 37333333, 59733333, 95573333, 152917333],
+  '超鴨神體': [133333333, 213333333, 341333333, 546133333, 873813333],
+  '鴨界意志': [766666667, 1226666667, 1962666667, 3140266667, 5024426667],
+  '原初之鴨': [4000000000, 6400000000, 10240000000, 16384000000, 26214400000],
+  '鴨神皇': [21666666667, 34666666667, 55466666667, 88746666667, 141994666667],
+  '多元鴨體': [116666666667, 186666666667, 298666666667, 477866666667, 764586666667],
+  '絕對鴨': [666666666667, 1066666666667, 1706666666667, 2730666666667, 4369066666667]
 };
 
 export const STAGE_ORDER: DuckStage[] = [
@@ -45,25 +45,19 @@ export function getMaxDuckPower(stage: DuckStage): number {
 }
 
 // 获取阶段图标
+// 获取阶段对应的图片路径
+export function getStageImage(stage: DuckStage): string {
+  const stageIndex = STAGE_ORDER.indexOf(stage);
+  // 图片编号从1开始，有12张图片
+  // 如果阶段超过12，使用第12张图片（最后一幅）
+  const imageNumber = Math.min(stageIndex + 1, 12);
+  return `/Image/Duck/${imageNumber}.png`;
+}
+
+// 保留旧函数用于兼容（返回图片路径而不是emoji）
 export function getStageIcon(stage: DuckStage): string {
-  const icons: Record<DuckStage, string> = {
-    '鴨蛋': '🥚',
-    '黃鴨': '🐥',
-    '白鴨': '🦆',
-    '成年鴨': '🦆',
-    '至聖先鴨': '✨',
-    '天啟鴨': '⚡',
-    '星界鴨': '🌟',
-    '混沌鴨': '🌀',
-    '永恆鴨': '⏳',
-    '超鴨神體': '💎',
-    '鴨界意志': '🌌',
-    '原初之鴨': '🔮',
-    '鴨神皇': '👑',
-    '多元鴨體': '🌐',
-    '絕對鴨': '∞'
-  };
-  return icons[stage] || '🦆';
+  // 为了兼容性，返回图片路径
+  return getStageImage(stage);
 }
 
 // 获取阶段描述
@@ -88,53 +82,61 @@ export function getStageDescription(stage: DuckStage): string {
   return descriptions[stage] || '';
 }
 
-// 可升级道具数值计算
-// 鸭点击器：value = prevValue × 1.5 + 2
+// 获取道具图标（如果有图片则使用图片，否则使用emoji）
+export function getItemIcon(itemName: string, defaultIcon: string): string {
+  // 检查是否有对应的图片文件
+  const imagePath = `/Image/Item/${itemName}.png`;
+  // 注意：这里返回路径，组件需要检查图片是否存在
+  // 为了简化，我们可以假设图片都存在，实际显示时组件会处理加载失败的情况
+  return imagePath;
+}
+
+// 检查道具是否有对应的图片
+export function hasItemImage(itemName: string): boolean {
+  const imageFiles = [
+    '天鴨之盾',
+    '小黃鴨餅乾',
+    '白鴨能量棒',
+    '神秘鴨寶箱',
+    '至聖鴨法杖',
+    '超級鴨羽翼',
+    '雞毛撲打器',
+    '魔法鴨羽毛',
+    '鴨之皇冠',
+    '鴨蛋加速器',
+    '黃金鴨蛋',
+    '黃鴨助力'
+  ];
+  return imageFiles.includes(itemName);
+}
+
+// 可升级道具数值计算（简化版）
+// 鸭点击器：固定每级 +1，Lv.1 = +2, Lv.2 = +3, ..., Lv.n = +(n+1)
 export function getClickerValue(level: number): number {
   if (level <= 0) return 0;
-  if (level === 1) return 1;
-  
-  let value = 1;
-  for (let i = 2; i <= level; i++) {
-    value = Math.floor(value * 1.5 + 2);
-  }
-  return value;
+  return 2 + (level - 1); // Lv.1 = 2, Lv.2 = 3, ...
 }
 
-// 鸭点击器成本：cost = prevCost × 1.6 + 15
+// 鸭点击器成本：Lv.1 = 100, 之后每级 ×1.75
 export function getClickerUpgradeCost(level: number): number {
   if (level <= 0) return 0;
-  if (level === 1) return 10; // 初始成本
+  if (level === 1) return 100; // 初始成本
   
-  let cost = 10;
-  for (let i = 2; i <= level; i++) {
-    cost = Math.floor(cost * 1.6 + 15);
-  }
-  return cost;
+  return Math.floor(100 * Math.pow(1.75, level - 1));
 }
 
-// 鸭自动机：value = prevValue × 1.7 + 3
+// 鸭自动机：固定每级 +1，Lv.1 = +1, Lv.2 = +2, ..., Lv.n = +n
 export function getAutoValue(level: number): number {
   if (level <= 0) return 0;
-  if (level === 1) return 1;
-  
-  let value = 1;
-  for (let i = 2; i <= level; i++) {
-    value = Math.floor(value * 1.7 + 3);
-  }
-  return value;
+  return level; // Lv.1 = 1, Lv.2 = 2, ...
 }
 
-// 鸭自动机成本：cost = prevCost × 1.5 + 20
+// 鸭自动机成本：Lv.1 = 250, 之后每级 ×2.0
 export function getAutoUpgradeCost(level: number): number {
   if (level <= 0) return 0;
-  if (level === 1) return 30; // 初始成本
+  if (level === 1) return 250; // 初始成本
   
-  let cost = 30;
-  for (let i = 2; i <= level; i++) {
-    cost = Math.floor(cost * 1.5 + 20);
-  }
-  return cost;
+  return Math.floor(250 * Math.pow(2.0, level - 1));
 }
 
 // 特殊道具列表（强化版）
@@ -146,7 +148,7 @@ export const SPECIAL_ITEMS: SpecialItem[] = [
     description: '點擊時 25% 機率額外 +5 Quack',
     cost: 100,
     tier: 'early',
-    icon: '🍪',
+    icon: '/Image/Item/小黃鴨餅乾.png',
     effect: {
       type: 'clickChance',
       probability: 0.25,
@@ -159,7 +161,7 @@ export const SPECIAL_ITEMS: SpecialItem[] = [
     description: '每秒自動 +10 Quack',
     cost: 250,
     tier: 'early',
-    icon: '🥚',
+    icon: '/Image/Item/鴨蛋加速器.png',
     effect: {
       type: 'autoProduction',
       value: 10
@@ -171,7 +173,7 @@ export const SPECIAL_ITEMS: SpecialItem[] = [
     description: '點擊 +10 Quack，連續 5 次無中斷額外 +30',
     cost: 600,
     tier: 'early',
-    icon: '🪶',
+    icon: '/Image/Item/雞毛撲打器.png',
     effect: {
       type: 'combo',
       clickBonus: 10,
@@ -185,7 +187,7 @@ export const SPECIAL_ITEMS: SpecialItem[] = [
     description: '所有自動產出 +20%',
     cost: 1000,
     tier: 'early',
-    icon: '🦆',
+    icon: '/Image/Item/黃鴨助力.png',
     effect: {
       type: 'multiplier',
       target: 'auto',
@@ -198,7 +200,7 @@ export const SPECIAL_ITEMS: SpecialItem[] = [
     description: '點擊時 15% 機率額外 +100 Quack',
     cost: 1500,
     tier: 'early',
-    icon: '⚡',
+    icon: '/Image/Item/白鴨能量棒.png',
     effect: {
       type: 'clickChance',
       probability: 0.15,
@@ -245,7 +247,7 @@ export const SPECIAL_ITEMS: SpecialItem[] = [
     description: '每秒 +200 Quack，點擊 +25 Quack',
     cost: 6500,
     tier: 'mid',
-    icon: '🪄',
+    icon: '/Image/Item/至聖鴨法杖.png',
     effect: {
       type: 'hybrid',
       effects: [
@@ -290,7 +292,7 @@ export const SPECIAL_ITEMS: SpecialItem[] = [
     description: '點擊時 10% 機率獲得當前 Quack 值的 +2%',
     cost: 15000,
     tier: 'mid',
-    icon: '🥇',
+    icon: '/Image/Item/黃金鴨蛋.png',
     effect: {
       type: 'clickChance',
       probability: 0.1,
@@ -304,7 +306,7 @@ export const SPECIAL_ITEMS: SpecialItem[] = [
     description: '每 10 秒觸發「魔法風暴」：一次性獲得 +2000 Quack',
     cost: 20000,
     tier: 'mid',
-    icon: '🪶',
+    icon: '/Image/Item/魔法鴨羽毛.png',
     effect: {
       type: 'periodic',
       interval: 10,
@@ -333,7 +335,7 @@ export const SPECIAL_ITEMS: SpecialItem[] = [
     description: '每 30 秒隨機給 +5000~10000 Quack',
     cost: 40000,
     tier: 'mid',
-    icon: '📦',
+    icon: '/Image/Item/神秘鴨寶箱.png',
     effect: {
       type: 'periodic',
       interval: 30,
@@ -349,7 +351,7 @@ export const SPECIAL_ITEMS: SpecialItem[] = [
     description: '點擊 +500 Quack，所有道具效果 +10%',
     cost: 60000,
     tier: 'late',
-    icon: '👑',
+    icon: '/Image/Item/鴨之皇冠.png',
     effect: {
       type: 'hybrid',
       effects: [
@@ -364,7 +366,7 @@ export const SPECIAL_ITEMS: SpecialItem[] = [
     description: '每秒 +1000 Quack，暴擊傷害 ×2',
     cost: 90000,
     tier: 'late',
-    icon: '🪽',
+    icon: '/Image/Item/超級鴨羽翼.png',
     effect: {
       type: 'hybrid',
       effects: [
@@ -376,7 +378,7 @@ export const SPECIAL_ITEMS: SpecialItem[] = [
   {
     id: 17,
     name: '鴨神之杖',
-    description: '點擊 +2000 Quack，10% 機率立即升級鴨子',
+    description: '點擊 +2000 Quack，10% 機率觸發「神聖共鳴」：5 秒內所有 Quack +300%',
     cost: 120000,
     tier: 'late',
     icon: '🔱',
@@ -384,7 +386,7 @@ export const SPECIAL_ITEMS: SpecialItem[] = [
       type: 'hybrid',
       effects: [
         { type: 'clickBonus', value: 2000 },
-        { type: 'instantUpgrade', probability: 0.1, target: 'duckStage' }
+        { type: 'sacredResonance', probability: 0.1, multiplier: 4.0, duration: 5 }
       ]
     }
   },
@@ -394,7 +396,7 @@ export const SPECIAL_ITEMS: SpecialItem[] = [
     description: '每秒 +1500 Quack，鴨力值增長速度減少 20%',
     cost: 160000,
     tier: 'late',
-    icon: '🛡️',
+    icon: '/Image/Item/天鴨之盾.png',
     effect: {
       type: 'hybrid',
       effects: [

@@ -1,6 +1,6 @@
 import { GameState } from '../types';
 import { formatNumber } from '../utils';
-import { UPGRADE_COSTS, getMaxDuckPower, getStageIcon, getStageDescription } from '../gameData';
+import { UPGRADE_COSTS, getMaxDuckPower, getStageImage, getStageDescription } from '../gameData';
 
 interface HeaderProps {
   state: GameState;
@@ -32,7 +32,23 @@ export default function Header({ state, onUpgrade }: HeaderProps) {
           {/* Duck Stage and Upgrade */}
           <div className="flex flex-col items-center gap-2">
             <div className="flex items-center justify-center gap-3 flex-wrap">
-              <span className="text-3xl md:text-4xl">{getStageIcon(state.stage)}</span>
+              <img
+                src={getStageImage(state.stage)}
+                alt={state.stage}
+                className="w-12 h-12 md:w-16 md:h-16 object-contain"
+                onError={(e) => {
+                  // 如果图片加载失败，显示默认emoji
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  const parent = target.parentElement;
+                  if (parent) {
+                    const emoji = document.createElement('span');
+                    emoji.className = 'text-3xl md:text-4xl';
+                    emoji.textContent = '🦆';
+                    parent.insertBefore(emoji, target);
+                  }
+                }}
+              />
               <div className="text-xl md:text-2xl font-semibold text-yellow-700">
                 {state.stage} {state.stageLevel > 0 && `(升級 ${state.stageLevel}/5)`}
               </div>

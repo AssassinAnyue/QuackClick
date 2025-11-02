@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { GameState } from '../types';
 import { formatNumber } from '../utils';
+import { STAGE_ORDER } from '../gameData';
 
 interface DuckAreaProps {
   state: GameState;
@@ -20,6 +21,33 @@ export default function DuckArea({ state, onDuckClick, clickQuackGained = 0 }: D
   const [floatingNumbers, setFloatingNumbers] = useState<FloatingNumber[]>([]);
   const floatingIdRef = useRef(0);
   const lastClickQuackRef = useRef(0);
+  const quackAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // 初始化音频对象
+  useEffect(() => {
+    quackAudioRef.current = new Audio('/SFX/Quack.wav');
+    quackAudioRef.current.volume = 0.3; // 设置音量（0-1）
+    quackAudioRef.current.preload = 'auto'; // 预加载音频
+    
+    return () => {
+      if (quackAudioRef.current) {
+        quackAudioRef.current.pause();
+        quackAudioRef.current = null;
+      }
+    };
+  }, []);
+
+  // 播放音效函数
+  const playQuackSound = () => {
+    if (quackAudioRef.current && !state.gameOver && !state.gameWon) {
+      // 重置音频到开始位置，以便可以重复播放
+      quackAudioRef.current.currentTime = 0;
+      quackAudioRef.current.play().catch(error => {
+        // 处理自动播放策略限制（浏览器可能阻止自动播放）
+        console.log('Audio play failed:', error);
+      });
+    }
+  };
 
   useEffect(() => {
     if (clickQuackGained > 0 && clickQuackGained !== lastClickQuackRef.current) {
@@ -46,9 +74,13 @@ export default function DuckArea({ state, onDuckClick, clickQuackGained = 0 }: D
     return () => timers.forEach(clearTimeout);
   }, [floatingNumbers]);
 
+  const handleClick = () => {
+    playQuackSound(); // 播放音效
+    onDuckClick();
+  };
+
   const handleMouseDown = () => {
     setIsClicking(true);
-    onDuckClick();
   };
 
   const handleMouseUp = () => {
@@ -59,45 +91,48 @@ export default function DuckArea({ state, onDuckClick, clickQuackGained = 0 }: D
     setIsClicking(false);
   };
 
-  const getDuckEmoji = () => {
-    switch (state.stage) {
-      case '鴨蛋': return '🥚';
-      case '黃鴨': return '🐥';
-      case '白鴨': return '🦆';
-      case '成年鴨': return '🦆';
-      case '至聖先鴨': return '✨';
-      case '天啟鴨': return '⚡';
-      case '星界鴨': return '🌟';
-      case '混沌鴨': return '🌀';
-      case '永恆鴨': return '⏳';
-      case '超鴨神體': return '💎';
-      case '鴨界意志': return '🌌';
-      case '原初之鴨': return '🔮';
-      case '鴨神皇': return '👑';
-      case '多元鴨體': return '🌐';
-      case '絕對鴨': return '∞';
-      default: return '🦆';
-    }
+  // 获取鸭子图片路径
+  const getDuckImage = () => {
+    const stageIndex = STAGE_ORDER.indexOf(state.stage);
+    // 图片编号从1开始，有12张图片
+    // 如果阶段超过12，使用第12张图片（最后一幅）
+    const imageNumber = Math.min(stageIndex + 1, 12);
+    return `/Image/Duck/${imageNumber}.png`;
   };
 
   return (
     <div className="relative">
       <button
         id="duck"
-        onClick={onDuckClick}
+        onClick={handleClick}
         onMouseDown={handleMouseDown}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
         disabled={state.gameOver || state.gameWon}
         className={`
-          text-8xl md:text-9xl transition-transform duration-100 select-none
+          transition-transform duration-100 select-none
           ${isClicking ? 'scale-90 rotate-12' : 'scale-100 rotate-0'}
           ${state.gameOver || state.gameWon ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-105'}
           active:scale-90
         `}
         style={{ userSelect: 'none' }}
       >
-        {getDuckEmoji()}
+        <img
+          src={getDuckImage()}
+          alt={state.stage}
+          className="w-48 h-48 md:w-64 md:h-64 object-contain"
+          draggable={false}
+          onError={(e) => {
+            // 如果图片加载失败，显示默认emoji
+            const target = e.target as HTMLImageElement;
+            target.style.display = 'none';
+            const parent = target.parentElement;
+            if (parent) {
+              parent.textContent = '🦆';
+              parent.className += ' text-8xl md:text-9xl';
+            }
+          }}
+        />
       </button>
 
       {/* Floating numbers */}
@@ -118,7 +153,7 @@ export default function DuckArea({ state, onDuckClick, clickQuackGained = 0 }: D
       {/* Stage indicator */}
       <div className="mt-4 text-center">
         <p className="text-xl font-semibold text-gray-700">
-          點擊{getDuckEmoji()}獲得 Quack！
+          點擊獲得 Quack！
         </p>
       </div>
     </div>

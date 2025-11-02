@@ -1,5 +1,6 @@
-import { GameState, GameAction, MultiplierEffect } from './types';
-import { UPGRADE_COSTS, STAGE_ORDER, SPECIAL_ITEMS, getMaxDuckPower, getClickerUpgradeCost, getAutoUpgradeCost, getClickerValue, getAutoValue } from './gameData';
+import { GameState, GameAction } from './types';
+import { UPGRADE_COSTS, STAGE_ORDER, getMaxDuckPower } from './gameData';
+import { UPGRADE_ITEMS, getItemUpgradeCost, getItemEffectValue, getItemNextEffectValue } from './upgradeItems';
 import { saveGameState } from './utils';
 
 const COMBO_TIMEOUT = 2000; // 2秒内未点击则重置连击
@@ -10,14 +11,13 @@ export const INITIAL_STATE: GameState = {
   stage: '鴨蛋',
   stageLevel: 0,
   
-  // 可升级道具
-  clickerLevel: 0,
-  autoLevel: 0,
+  // 可升级道具等级（所有道具初始为0）
+  itemLevels: {},
   
-  // 特殊道具
+  // 特殊道具（保留兼容）
   purchasedItems: new Set(),
   
-  // 计算缓存（初始至少有基础点击+1）
+  // 计算缓存
   totalClickPower: 1,
   totalAutoProduction: 0,
   
@@ -37,8 +37,22 @@ export const INITIAL_STATE: GameState = {
   bouncyModeActive: false,
   bouncyModeTimer: 0,
   
+  // 神圣共鸣状态
+  sacredResonanceActive: false,
+  sacredResonanceTimer: 0,
+  
+  // 閃電鴨核状态
+  lightningBoostActive: false,
+  lightningBoostTimer: 0,
+  lightningBoostMultiplier: 1,
+  
+  // 時空鴨儀状态
+  timeFreezeActive: false,
+  timeFreezeTimer: 0,
+  
   // 连击系统
   comboCount: 0,
+  lastClickTime: 0,
   
   // Game status
   gameOver: false,
@@ -48,264 +62,203 @@ export const INITIAL_STATE: GameState = {
 
 // 计算总点击力量
 function calculateClickPower(state: GameState): number {
-  // 基础点击力量来自鸭点击器（level 0时至少+1基础点击）
-  let baseQuack = Math.max(1, getClickerValue(state.clickerLevel));
+  let baseQuack = 0; // 基础点击力量
   
-  // 加上特殊道具的点击加成
-  SPECIAL_ITEMS.forEach(item => {
-    if (state.purchasedItems.has(item.id)) {
-      const effect = item.effect;
-      
-      // clickBonus效果
-      if (effect.type === 'clickBonus') {
-        baseQuack += effect.value;
-      }
-      
-      // combo效果的clickBonus
-      if (effect.type === 'combo' && effect.clickBonus) {
-        baseQuack += effect.clickBonus;
-      }
-      
-      // hybrid效果中的clickBonus
-      if (effect.type === 'hybrid') {
-        effect.effects.forEach(subEffect => {
-          if (subEffect.type === 'clickBonus') {
-            baseQuack += subEffect.value;
-          }
-        });
-      }
-    }
-  });
+  // 道具1: 鴨點擊器 - 每级+1点击，基础+2
+  const clickerLevel = state.itemLevels[1] || 0;
+  if (clickerLevel > 0) {
+    baseQuack += getItemEffectValue(UPGRADE_ITEMS[0], clickerLevel);
+  } else {
+    baseQuack = 1; // 至少基础+1
+  }
   
-  // 应用全局倍率加成（包括弹射模式）
+  // 应用点击倍率（道具3: 超級鴨點擊器）
+  const superClickerLevel = state.itemLevels[3] || 0;
+  let clickMultiplier = 1;
+  if (superClickerLevel > 0) {
+    clickMultiplier += getItemEffectValue(UPGRADE_ITEMS[2], superClickerLevel);
+  }
+  
+  // 应用全局倍率加成
   let multiplier = state.activeMultiplier;
-  if (state.bouncyModeActive) {
-    multiplier *= 3; // 弹射模式 ×3
+  
+  // 神圣共鸣
+  if (state.sacredResonanceActive) {
+    multiplier *= 4; // 神圣共鸣 ×4 (+300%)
   }
   
-  SPECIAL_ITEMS.forEach(item => {
-    if (state.purchasedItems.has(item.id)) {
-      const effect = item.effect;
-      if (effect.type === 'multiplier') {
-        if (effect.target === 'click' || effect.target === 'all') {
-          // 检查是否在持续时间内（主动技能）
-          const skill = state.activeSkills[item.id];
-          if (skill && skill.durationRemaining && skill.durationRemaining > 0) {
-            multiplier *= effect.multiplier;
-          } else if (!effect.duration) {
-            // 永久倍率
-            multiplier *= effect.multiplier;
-          }
-        }
-      } else if (effect.type === 'hybrid') {
-        effect.effects.forEach(subEffect => {
-          if (subEffect.type === 'multiplier' && 
-              (subEffect.target === 'click' || subEffect.target === 'all')) {
-            const skill = state.activeSkills[item.id];
-            if (skill && skill.durationRemaining && skill.durationRemaining > 0) {
-              multiplier *= subEffect.multiplier;
-            } else if (!subEffect.duration) {
-              multiplier *= subEffect.multiplier;
-            }
-          }
-        });
-      }
+  // 道具9: 鴨之專注 - 点击与自动生产加成
+  const focusLevel = state.itemLevels[9] || 0;
+  if (focusLevel > 0) {
+    multiplier += getItemEffectValue(UPGRADE_ITEMS[8], focusLevel);
+  }
+  
+  // 道具10: 鴨之祝福 - 所有获得 Quack 值倍率 (×1.1 = +0.1)
+  const blessingLevel = state.itemLevels[10] || 0;
+  if (blessingLevel > 0) {
+    multiplier += getItemEffectValue(UPGRADE_ITEMS[9], blessingLevel);
+  }
+  
+  // 道具19: 鴨鳴鐘 - 提升所有道具效果
+  const bellLevel = state.itemLevels[19] || 0;
+  if (bellLevel > 0) {
+    multiplier += getItemEffectValue(UPGRADE_ITEMS[18], bellLevel);
+  }
+  
+  // 道具20: 鴨靈核心 - 所有加成类道具效果（只影响加成系道具）
+  const coreLevel = state.itemLevels[20] || 0;
+  if (coreLevel > 0) {
+    const coreBoost = getItemEffectValue(UPGRADE_ITEMS[19], coreLevel);
+    // 只影响加成系道具（9, 10, 13, 16, 19, 20）
+    const boostItems = [9, 10, 13, 16, 19, 20];
+    const hasBoostItems = boostItems.some(id => (state.itemLevels[id] || 0) > 0);
+    if (hasBoostItems) {
+      multiplier += coreBoost;
     }
-  });
-  
-  // 道具效果加成（鸭之皇冠）
-  let itemMultiplier = 1;
-  if (state.purchasedItems.has(15)) { // 鸭之皇冠
-    SPECIAL_ITEMS.forEach(item => {
-      if (state.purchasedItems.has(item.id) && item.id !== 15) {
-        itemMultiplier *= 1.1; // 所有其他道具效果+10%
-      }
-    });
   }
   
-  return Math.floor(baseQuack * multiplier * itemMultiplier);
+  // 道具11: 彩羽共鳴 - 检查是否激活（10秒内产出翻倍）
+  const rainbowLevel = state.itemLevels[11] || 0;
+  if (rainbowLevel > 0) {
+    // 检查activeSkills中是否有彩虹共鸣激活
+    const rainbowSkill = state.activeSkills[11];
+    if (rainbowSkill && rainbowSkill.durationRemaining && rainbowSkill.durationRemaining > 0) {
+      multiplier *= 2; // 产出翻倍
+    }
+  }
+  
+  // 道具18: 鴨界之門 - 超鸭维度（所有收益×3）
+  const dimensionLevel = state.itemLevels[18] || 0;
+  if (dimensionLevel > 0) {
+    const dimensionSkill = state.activeSkills[18];
+    if (dimensionSkill && dimensionSkill.durationRemaining && dimensionSkill.durationRemaining > 0) {
+      const dimensionMultiplier = getItemEffectValue(UPGRADE_ITEMS[17], dimensionLevel);
+      multiplier *= dimensionMultiplier;
+    }
+  }
+  
+  return Math.floor(baseQuack * clickMultiplier * multiplier);
 }
 
 // 计算自动产量
 function calculateAutoProduction(state: GameState): number {
-  // 基础自动产量来自鸭自动机
-  let total = getAutoValue(state.autoLevel);
+  let baseProduction = 0;
   
-  // 加上特殊道具的自动产量
-  SPECIAL_ITEMS.forEach(item => {
-    if (state.purchasedItems.has(item.id)) {
-      const effect = item.effect;
-      
-      if (effect.type === 'autoProduction') {
-        total += effect.value;
-      } else if (effect.type === 'hybrid') {
-        effect.effects.forEach(subEffect => {
-          if (subEffect.type === 'autoProduction') {
-            total += subEffect.value;
-          }
-        });
-      }
-    }
-  });
-  
-  // 应用自动道具倍率加成
-  let multiplier = 1;
-  SPECIAL_ITEMS.forEach(item => {
-    if (state.purchasedItems.has(item.id)) {
-      const effect = item.effect;
-      
-      if (effect.type === 'multiplier') {
-        if (effect.target === 'auto' || effect.target === 'all') {
-          const skill = state.activeSkills[item.id];
-          if (skill && skill.durationRemaining && skill.durationRemaining > 0) {
-            multiplier *= effect.multiplier;
-          } else if (!effect.duration) {
-            multiplier *= effect.multiplier;
-          }
-        }
-      } else if (effect.type === 'hybrid') {
-        effect.effects.forEach(subEffect => {
-          if (subEffect.type === 'multiplier' && 
-              (subEffect.target === 'auto' || subEffect.target === 'all')) {
-            const skill = state.activeSkills[item.id];
-            if (skill && skill.durationRemaining && skill.durationRemaining > 0) {
-              multiplier *= subEffect.multiplier;
-            } else if (!subEffect.duration) {
-              multiplier *= subEffect.multiplier;
-            }
-          }
-        });
-      }
-    }
-  });
-  
-  // 道具效果加成（鸭之皇冠）
-  if (state.purchasedItems.has(15)) {
-    multiplier *= 1.1;
+  // 道具2: 鴨自動機 - 每级+1自动，基础+1
+  const autoLevel = state.itemLevels[2] || 0;
+  if (autoLevel > 0) {
+    baseProduction += getItemEffectValue(UPGRADE_ITEMS[1], autoLevel);
   }
   
-  // 全局倍率（主动技能）
-  if (state.activeMultiplier > 1) {
-    multiplier *= state.activeMultiplier;
+  // 应用自动倍率
+  let autoMultiplier = 1;
+  
+  // 道具6: 鴨時間加速器 - 全自动产出速度
+  const timeAcceleratorLevel = state.itemLevels[6] || 0;
+  if (timeAcceleratorLevel > 0) {
+    autoMultiplier += getItemEffectValue(UPGRADE_ITEMS[5], timeAcceleratorLevel);
   }
   
-  return Math.floor(total * multiplier);
-}
-
-// 处理点击时的机率效果
-function handleClickChanceEffects(state: GameState, purchasedItems: number[]): number {
-  let bonus = 0;
+  // 道具7: 鴨燃引擎 - 每升级增加 +10% 自动Quack
+  const engineLevel = state.itemLevels[7] || 0;
+  if (engineLevel > 0) {
+    autoMultiplier += getItemEffectValue(UPGRADE_ITEMS[6], engineLevel);
+  }
   
-  purchasedItems.forEach(itemId => {
-    const item = SPECIAL_ITEMS.find(i => i.id === itemId);
-    if (!item || item.effect.type !== 'clickChance') return;
-    
-    const effect = item.effect;
-    const probability = effect.probability || 0;
-    
-    if (Math.random() < probability) {
-      if (effect.bonus === 'percentage' && effect.bonusPercent) {
-        // 百分比加成（黄金鸭蛋）
-        bonus += Math.floor(state.quack * effect.bonusPercent);
-      } else if (typeof effect.bonus === 'number') {
-        bonus += effect.bonus;
-      }
+  // 道具8: 閃電鴨核 - 每次点击增加自动生产暂时 +2倍
+  if (state.lightningBoostActive) {
+    autoMultiplier += state.lightningBoostMultiplier; // +2倍（即×3）
+  }
+  
+  // 道具9: 鴨之專注 - 点击与自动生产加成
+  const focusLevel = state.itemLevels[9] || 0;
+  if (focusLevel > 0) {
+    autoMultiplier += getItemEffectValue(UPGRADE_ITEMS[8], focusLevel);
+  }
+  
+  // 道具10: 鴨之祝福
+  const blessingLevel = state.itemLevels[10] || 0;
+  if (blessingLevel > 0) {
+    autoMultiplier += getItemEffectValue(UPGRADE_ITEMS[9], blessingLevel);
+  }
+  
+  // 道具14: 聰鴨晶片 - 自动机效率
+  const chipLevel = state.itemLevels[14] || 0;
+  if (chipLevel > 0) {
+    autoMultiplier += getItemEffectValue(UPGRADE_ITEMS[13], chipLevel);
+  }
+  
+  // 全局倍率
+  let multiplier = state.activeMultiplier;
+  if (state.sacredResonanceActive) {
+    multiplier *= 4;
+  }
+  
+  // 加成系道具（复用之前声明的focusLevel和blessingLevel）
+  const bellLevel = state.itemLevels[19] || 0;
+  const coreLevel = state.itemLevels[20] || 0;
+  
+  // focusLevel和blessingLevel已经在上面声明过了，直接使用
+  // 它们既影响autoMultiplier也影响multiplier
+  if (focusLevel > 0) {
+    multiplier += getItemEffectValue(UPGRADE_ITEMS[8], focusLevel);
+  }
+  if (blessingLevel > 0) {
+    multiplier += getItemEffectValue(UPGRADE_ITEMS[9], blessingLevel);
+  }
+  if (bellLevel > 0) {
+    multiplier += getItemEffectValue(UPGRADE_ITEMS[18], bellLevel);
+  }
+  if (coreLevel > 0) {
+    const boostItems = [9, 10, 13, 16, 19, 20];
+    const hasBoostItems = boostItems.some(id => (state.itemLevels[id] || 0) > 0);
+    if (hasBoostItems) {
+      multiplier += getItemEffectValue(UPGRADE_ITEMS[19], coreLevel);
     }
-  });
+  }
   
-  return bonus;
+  // 道具11: 彩羽共鳴
+  const rainbowLevel = state.itemLevels[11] || 0;
+  if (rainbowLevel > 0) {
+    const rainbowSkill = state.activeSkills[11];
+    if (rainbowSkill && rainbowSkill.durationRemaining && rainbowSkill.durationRemaining > 0) {
+      multiplier *= 2;
+    }
+  }
+  
+  // 道具18: 鴨界之門
+  const dimensionLevel = state.itemLevels[18] || 0;
+  if (dimensionLevel > 0) {
+    const dimensionSkill = state.activeSkills[18];
+    if (dimensionSkill && dimensionSkill.durationRemaining && dimensionSkill.durationRemaining > 0) {
+      const dimensionMultiplier = getItemEffectValue(UPGRADE_ITEMS[17], dimensionLevel);
+      multiplier *= dimensionMultiplier;
+    }
+  }
+  
+  return Math.floor(baseProduction * autoMultiplier * multiplier);
 }
 
-// 检查连击奖励
+// 处理连击奖励（道具4: 鴨式連擊模組）
 function checkComboBonus(state: GameState): { bonus: number; triggerBouncyMode: boolean } {
   let bonus = 0;
-  let triggerBouncyMode = false;
+  const comboModuleLevel = state.itemLevels[4] || 0;
   
-  SPECIAL_ITEMS.forEach(item => {
-    if (state.purchasedItems.has(item.id) && item.effect.type === 'combo') {
-      const effect = item.effect;
-      if (effect.comboThreshold && state.comboCount >= effect.comboThreshold) {
-        if (effect.comboBonus) {
-          bonus += effect.comboBonus;
-        }
-        // 检查是否触发弹射模式
-        if (effect.comboEffect === 'bouncyMode') {
-          triggerBouncyMode = true;
-        }
-      }
-    }
-  });
+  if (comboModuleLevel > 0 && state.comboCount >= 5) {
+    const comboBonus = getItemEffectValue(UPGRADE_ITEMS[3], comboModuleLevel);
+    bonus = Math.floor(state.totalClickPower * comboBonus);
+  }
   
-  return { bonus, triggerBouncyMode };
+  return { bonus, triggerBouncyMode: false };
 }
 
 // 计算鸭力值增长速率
 function calculateDuckPowerRate(state: GameState): number {
   let rate = 1; // 每秒增加1点
   
-  SPECIAL_ITEMS.forEach(item => {
-    if (state.purchasedItems.has(item.id)) {
-      const effect = item.effect;
-      
-      if (effect.type === 'staminaReduction') {
-        rate *= effect.multiplier;
-      } else if (effect.type === 'hybrid') {
-        effect.effects.forEach(subEffect => {
-          if (subEffect.type === 'staminaReduction') {
-            rate *= subEffect.multiplier;
-          }
-        });
-      }
-    }
-  });
+  // 道具17: 時空鴨儀 - 暂停鸭力值累积（需要在TICK中特殊处理）
   
   return rate;
-}
-
-// 计算总暴击率
-function calculateTotalCritRate(state: GameState): number {
-  let critRate = 0;
-  
-  SPECIAL_ITEMS.forEach(item => {
-    if (state.purchasedItems.has(item.id)) {
-      const effect = item.effect;
-      
-      if (effect.type === 'critRate') {
-        critRate += effect.value;
-      } else if (effect.type === 'hybrid') {
-        effect.effects.forEach(subEffect => {
-          if (subEffect.type === 'critRate') {
-            critRate += subEffect.value;
-          }
-        });
-      }
-    }
-  });
-  
-  return critRate;
-}
-
-// 计算暴击伤害倍率
-function calculateCritDamageMultiplier(state: GameState): number {
-  let multiplier = 2; // 基础暴击×2
-  
-  SPECIAL_ITEMS.forEach(item => {
-    if (state.purchasedItems.has(item.id)) {
-      const effect = item.effect;
-      
-      if (effect.type === 'critDamage') {
-        multiplier *= effect.multiplier;
-      } else if (effect.type === 'hybrid') {
-        effect.effects.forEach(subEffect => {
-          if (subEffect.type === 'critDamage') {
-            multiplier *= subEffect.multiplier;
-          }
-        });
-      }
-    }
-  });
-  
-  return multiplier;
 }
 
 export function gameReducer(state: GameState, action: GameAction): GameState {
@@ -323,86 +276,51 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case 'CLICK': {
       newState = { ...state };
       
-      // 处理连击系统（2秒内未点击则重置）
+      // 处理连击系统
       const now = Date.now();
       if (newState.lastClickTime > 0 && now - newState.lastClickTime > COMBO_TIMEOUT) {
-        newState.comboCount = 1; // 重置为1（当前点击）
+        newState.comboCount = 1;
       } else {
         newState.comboCount++;
       }
       newState.lastClickTime = now;
-      newState.consecutiveClicks = newState.comboCount; // 兼容旧字段
+      newState.consecutiveClicks = newState.comboCount;
       
-      // 计算基础点击Quack
+      // 检查神圣共鸣触发（道具12: 鴨神之杖）
+      const staffLevel = newState.itemLevels[12] || 0;
+      if (staffLevel > 0) {
+        const probability = 0.1; // 10%机率
+        if (Math.random() < probability) {
+          const baseDuration = 5; // 基础5秒
+          const duration = baseDuration + getItemEffectValue(UPGRADE_ITEMS[11], staffLevel) - baseDuration;
+          newState.sacredResonanceActive = true;
+          newState.sacredResonanceTimer = duration * 60; // 转换为帧数
+        }
+      }
+      
+      // 检查閃電鴨核触发（道具8）- 每次点击增加自动生产暂时 +2倍
+      const lightningLevel = newState.itemLevels[8] || 0;
+      if (lightningLevel > 0) {
+        const baseDuration = 2; // 基础2秒
+        const duration = baseDuration + (getItemEffectValue(UPGRADE_ITEMS[7], lightningLevel) - baseDuration);
+        const multiplier = 2; // +2倍（即×3）
+        newState.lightningBoostActive = true;
+        newState.lightningBoostTimer = duration * 60;
+        newState.lightningBoostMultiplier = multiplier;
+      }
+      
+      // 计算点击Quack
       let clickQuack = calculateClickPower(newState);
-      
-      // 处理机率效果
-      const chanceBonus = handleClickChanceEffects(newState, Array.from(newState.purchasedItems));
-      clickQuack += chanceBonus;
       
       // 检查连击奖励
       const comboResult = checkComboBonus(newState);
       clickQuack += comboResult.bonus;
-      
-      // 触发弹射模式
-      if (comboResult.triggerBouncyMode && !newState.bouncyModeActive) {
-        newState.bouncyModeActive = true;
-        newState.bouncyModeTimer = 10 * 60; // 10秒（60fps）
-        clickQuack = calculateClickPower(newState); // 重新计算包含弹射模式倍率
-      }
-      
-      // 检查暴击
-      const critRate = calculateTotalCritRate(newState);
-      let critMultiplier = 1;
-      if (critRate > 0 && Math.random() < critRate) {
-        critMultiplier = calculateCritDamageMultiplier(newState);
-      }
-      clickQuack = Math.floor(clickQuack * critMultiplier);
-      
-      // 检查立即升级（鸭神之杖）
-      let instantUpgrade = false;
-      SPECIAL_ITEMS.forEach(item => {
-        if (newState.purchasedItems.has(item.id)) {
-          const effect = item.effect;
-          if (effect.type === 'instantUpgrade') {
-            if (Math.random() < effect.probability) {
-              instantUpgrade = true;
-            }
-          } else if (effect.type === 'hybrid') {
-            effect.effects.forEach(subEffect => {
-              if (subEffect.type === 'instantUpgrade') {
-                if (Math.random() < subEffect.probability) {
-                  instantUpgrade = true;
-                }
-              }
-            });
-          }
-        }
-      });
       
       newState.quack += clickQuack;
       newState.lastClickQuack = clickQuack;
       
       // 更新计算缓存
       newState.totalClickPower = calculateClickPower(newState);
-      
-      // 如果触发立即升级
-      if (instantUpgrade && newState.stageLevel < UPGRADE_COSTS[newState.stage].length) {
-        newState.stageLevel++;
-        if (newState.stageLevel >= UPGRADE_COSTS[newState.stage].length) {
-          // 进入下一阶段
-          const currentIndex = STAGE_ORDER.indexOf(newState.stage);
-          if (currentIndex < STAGE_ORDER.length - 1) {
-            newState.stage = STAGE_ORDER[currentIndex + 1];
-            newState.stageLevel = 0;
-            newState.duckPower = 0;
-            
-            if (newState.stage === '絕對鴨') {
-              newState.gameWon = true;
-            }
-          }
-        }
-      }
       
       break;
     }
@@ -414,8 +332,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const autoProduction = calculateAutoProduction(newState);
       newState.quack += autoProduction / 60; // Per frame (60fps)
       
-      // 鸭力值增长
-      const duckPowerRate = calculateDuckPowerRate(newState);
+      // 鸭力值增长（道具17: 時空鴨儀 - 暂停鸭力值累积）
+      let duckPowerRate = 1;
+      if (newState.timeFreezeActive) {
+        duckPowerRate = 0; // 暂停增长
+      }
       newState.duckPower += (duckPowerRate / 60);
       
       const maxDuckPower = getMaxDuckPower(newState.stage);
@@ -439,78 +360,63 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
         }
       }
       
-      // 处理主动技能倒计时
-      Object.keys(newState.activeSkills).forEach(itemIdStr => {
-        const itemId = parseInt(itemIdStr);
-        const skill = newState.activeSkills[itemId];
-        
-        if (skill.durationRemaining !== undefined && skill.durationRemaining > 0) {
-          skill.durationRemaining--;
-          if (skill.durationRemaining === 0) {
-            // 技能结束，重新计算倍率
-            newState.activeMultiplier = 1;
-            skill.cooldownRemaining = 0; // 重置冷却为0，开始计算
-            delete skill.durationRemaining;
-          }
+      // 处理神圣共鸣倒计时
+      if (newState.sacredResonanceTimer > 0) {
+        newState.sacredResonanceTimer--;
+        if (newState.sacredResonanceTimer === 0) {
+          newState.sacredResonanceActive = false;
         }
-        
-        // 更新冷却时间（使用帧数）
-        if (skill.durationRemaining === undefined && skill.cooldownRemaining > 0) {
-          skill.cooldownRemaining--;
+      }
+      
+      // 处理閃電鴨核倒计时
+      if (newState.lightningBoostTimer > 0) {
+        newState.lightningBoostTimer--;
+        if (newState.lightningBoostTimer === 0) {
+          newState.lightningBoostActive = false;
+          newState.lightningBoostMultiplier = 1;
         }
-      });
+      }
+      
+      // 处理時空鴨儀倒计时
+      if (newState.timeFreezeTimer > 0) {
+        newState.timeFreezeTimer--;
+        if (newState.timeFreezeTimer === 0) {
+          newState.timeFreezeActive = false;
+        }
+      }
       
       // 处理周期性奖励
-      SPECIAL_ITEMS.forEach(item => {
-        if (newState.purchasedItems.has(item.id) && item.effect.type === 'periodic') {
-          const effect = item.effect;
-          const timer = newState.periodicTimers[item.id] || 0;
-          
-          if (timer >= effect.interval * 60) { // 转换为帧数
-            let bonus: number;
-            if (Array.isArray(effect.bonus)) {
-              // 随机范围
-              const [min, max] = effect.bonus;
-              bonus = Math.floor(Math.random() * (max - min + 1)) + min;
-            } else {
-              bonus = effect.bonus;
-            }
-            
-            newState.quack += bonus;
-            newState.periodicTimers = { ...newState.periodicTimers, [item.id]: 0 };
-          } else {
-            newState.periodicTimers = { 
-              ...newState.periodicTimers, 
-              [item.id]: timer + 1 
-            };
-          }
-        } else if (newState.purchasedItems.has(item.id) && item.effect.type === 'hybrid') {
-          // 处理hybrid中的periodic效果
-          item.effect.effects.forEach(subEffect => {
-            if (subEffect.type === 'periodic') {
-              const timer = newState.periodicTimers[item.id] || 0;
-              
-              if (timer >= subEffect.interval * 60) {
-                let bonus: number;
-                if (Array.isArray(subEffect.bonus)) {
-                  const [min, max] = subEffect.bonus;
-                  bonus = Math.floor(Math.random() * (max - min + 1)) + min;
-                } else {
-                  bonus = subEffect.bonus;
-                }
-                
-                newState.quack += bonus;
-                newState.periodicTimers = { ...newState.periodicTimers, [item.id]: 0 };
-              } else {
-                newState.periodicTimers = { 
-                  ...newState.periodicTimers, 
-                  [item.id]: timer + 1 
-                };
-              }
-            }
-          });
+      // 道具13: 鴨之信仰池
+      const faithPoolLevel = newState.itemLevels[13] || 0;
+      if (faithPoolLevel > 0) {
+        const timer = newState.periodicTimers[13] || 0;
+        if (timer >= 10 * 60) {
+          const faithBonus = getItemEffectValue(UPGRADE_ITEMS[12], faithPoolLevel);
+          newState.quack += Math.floor(newState.quack * faithBonus);
+          newState.periodicTimers = { ...newState.periodicTimers, [13]: 0 };
+        } else {
+          newState.periodicTimers = { ...newState.periodicTimers, [13]: timer + 1 };
         }
-      });
+      }
+      
+      // 道具15: 鴨運轉輪
+      const wheelLevel = newState.itemLevels[15] || 0;
+      if (wheelLevel > 0) {
+        const timer = newState.periodicTimers[15] || 0;
+        if (timer >= 60 * 60) {
+          const probability = 0.05 + getItemEffectValue(UPGRADE_ITEMS[14], wheelLevel);
+          if (Math.random() < probability) {
+            // 触发黄金鸭雨（10秒×2倍）
+            newState.activeMultiplier *= 2;
+            newState.multiplierTimer = 10 * 60;
+          }
+          newState.periodicTimers = { ...newState.periodicTimers, [15]: 0 };
+        } else {
+          newState.periodicTimers = { ...newState.periodicTimers, [15]: timer + 1 };
+        }
+      }
+      
+      // 道具11: 彩羽共鳴 - 处理CD（需要在点击时或主动技能系统中处理）
       
       // 更新计算缓存
       newState.totalAutoProduction = calculateAutoProduction(newState);
@@ -540,23 +446,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       } else {
         let cost = costs[state.stageLevel];
         
-        // 应用升级折扣
-        let discount = 1;
-        SPECIAL_ITEMS.forEach(item => {
-          if (state.purchasedItems.has(item.id)) {
-            const effect = item.effect;
-            if (effect.type === 'upgradeDiscount') {
-              discount *= effect.discount;
-            } else if (effect.type === 'hybrid') {
-              effect.effects.forEach(subEffect => {
-                if (subEffect.type === 'upgradeDiscount') {
-                  discount *= subEffect.discount;
-                }
-              });
-            }
-          }
-        });
-        cost = Math.floor(cost * discount);
+        // 应用升级折扣（道具16: 鴨學研究所）
+        const researchLevel = state.itemLevels[16] || 0;
+        if (researchLevel > 0) {
+          const discount = getItemEffectValue(UPGRADE_ITEMS[15], researchLevel);
+          cost = Math.floor(cost * (1 - discount));
+        }
         
         if (state.quack >= cost) {
           newState = {
@@ -572,29 +467,44 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       break;
     }
     
-    case 'UPGRADE_CLICKER': {
-      const cost = getClickerUpgradeCost(state.clickerLevel + 1);
-      if (state.quack >= cost) {
-        newState = {
-          ...state,
-          quack: state.quack - cost,
-          clickerLevel: state.clickerLevel + 1,
-        };
-        newState.totalClickPower = calculateClickPower(newState);
-      } else {
-        return state;
+    case 'UPGRADE_ITEM': {
+      const item = UPGRADE_ITEMS.find(i => i.id === action.itemId);
+      if (!item) return state;
+      
+      const currentLevel = state.itemLevels[action.itemId] || 0;
+      if (currentLevel >= item.maxLevel) return state;
+      
+      let cost = getItemUpgradeCost(item, currentLevel);
+      
+      // 应用升级折扣（道具16: 鴨學研究所）
+      const researchLevel = state.itemLevels[16] || 0;
+      if (researchLevel > 0) {
+        const discount = getItemEffectValue(UPGRADE_ITEMS[15], researchLevel);
+        cost = Math.floor(cost * (1 - discount));
       }
-      break;
-    }
-    
-    case 'UPGRADE_AUTO': {
-      const cost = getAutoUpgradeCost(state.autoLevel + 1);
+      
       if (state.quack >= cost) {
         newState = {
           ...state,
           quack: state.quack - cost,
-          autoLevel: state.autoLevel + 1,
+          itemLevels: {
+            ...state.itemLevels,
+            [action.itemId]: currentLevel + 1
+          }
         };
+        
+        // 如果购买主动技能道具，初始化技能状态
+        if (action.itemId === 11 || action.itemId === 17 || action.itemId === 18) {
+          if (!newState.activeSkills[action.itemId]) {
+            newState.activeSkills[action.itemId] = {
+              lastUsed: 0,
+              cooldownRemaining: 0,
+            };
+          }
+        }
+        
+        // 更新计算缓存
+        newState.totalClickPower = calculateClickPower(newState);
         newState.totalAutoProduction = calculateAutoProduction(newState);
       } else {
         return state;
@@ -602,89 +512,171 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       break;
     }
     
-    case 'PURCHASE_ITEM': {
-      const item = SPECIAL_ITEMS.find(i => i.id === action.itemId);
-      if (!item || state.purchasedItems.has(action.itemId) || state.quack < item.cost) {
+    case 'USE_ACTIVE_SKILL': {
+      const item = UPGRADE_ITEMS.find(i => i.id === action.itemId);
+      if (!item || (state.itemLevels[action.itemId] || 0) === 0) {
         return state;
       }
       
-      newState = {
-        ...state,
-        quack: state.quack - item.cost,
-        purchasedItems: new Set(state.purchasedItems).add(action.itemId),
-      };
+      const level = state.itemLevels[action.itemId] || 0;
+      const skill = state.activeSkills[action.itemId];
+      const now = Date.now();
       
-      // 初始化主动技能状态（如果有duration和cooldown，说明是主动技能）
-      if (item.effect.type === 'multiplier' && item.effect.duration && item.effect.cooldown) {
-        newState.activeSkills[action.itemId] = {
-          lastUsed: 0,
-          cooldownRemaining: 0,
-        };
-      } else if (item.effect.type === 'hybrid') {
-        // 检查hybrid中是否有主动技能
-        const hasActiveSkill = item.effect.effects.some(e => 
-          e.type === 'multiplier' && e.duration && e.cooldown
-        );
-        if (hasActiveSkill) {
+      // 道具11: 彩羽共鳴 - 10秒内产出翻倍，CD 60秒
+      if (action.itemId === 11) {
+        const baseCD = 60;
+        const currentCDValue = getItemEffectValue(UPGRADE_ITEMS[10], level); // 这个值是60, 57, 54...
+        const cdReduction = baseCD - currentCDValue; // 计算减少了多少秒
+        const cooldown = Math.max(currentCDValue, 10); // 最少10秒CD
+        const duration = 10; // 10秒持续
+        
+        if (skill) {
+          const timeSinceLastUse = skill.lastUsed > 0 ? (now - skill.lastUsed) / 1000 : Infinity;
+          if (timeSinceLastUse < cooldown) {
+            return state; // 还在冷却中
+          }
+        }
+        
+        newState = { ...state };
+        newState.activeMultiplier *= 2;
+        newState.multiplierTimer = duration * 60;
+        
+        if (!newState.activeSkills[action.itemId]) {
           newState.activeSkills[action.itemId] = {
-            lastUsed: 0,
-            cooldownRemaining: 0,
+            lastUsed: now,
+            cooldownRemaining: cooldown * 60,
+            durationRemaining: duration * 60,
+          };
+        } else {
+          newState.activeSkills[action.itemId] = {
+            ...newState.activeSkills[action.itemId],
+            lastUsed: now,
+            cooldownRemaining: cooldown * 60,
+            durationRemaining: duration * 60,
           };
         }
+        
+        newState.totalClickPower = calculateClickPower(newState);
+        newState.totalAutoProduction = calculateAutoProduction(newState);
       }
       
-      // 更新计算缓存
-      newState.totalClickPower = calculateClickPower(newState);
-      newState.totalAutoProduction = calculateAutoProduction(newState);
-      
-      break;
-    }
-    
-    case 'USE_ACTIVE_SKILL': {
-      const item = SPECIAL_ITEMS.find(i => i.id === action.itemId);
-      if (!item || !state.purchasedItems.has(action.itemId)) {
-        return state;
+      // 道具17: 時空鴨儀 - 暂停鸭力值累积
+      if (action.itemId === 17) {
+        const duration = getItemEffectValue(UPGRADE_ITEMS[16], level);
+        const cooldown = 300; // 假设5分钟CD
+        
+        if (skill && skill.durationRemaining && skill.durationRemaining > 0) {
+          return state; // 正在激活中
+        }
+        
+        if (skill) {
+          const timeSinceLastUse = skill.lastUsed > 0 ? (now - skill.lastUsed) / 1000 : Infinity;
+          if (timeSinceLastUse < cooldown) {
+            return state; // 还在冷却中
+          }
+        }
+        
+        newState = { ...state };
+        newState.timeFreezeActive = true;
+        newState.timeFreezeTimer = duration * 60;
+        
+        if (!newState.activeSkills[action.itemId]) {
+          newState.activeSkills[action.itemId] = {
+            lastUsed: now,
+            cooldownRemaining: cooldown * 60,
+            durationRemaining: duration * 60,
+          };
+        } else {
+          newState.activeSkills[action.itemId] = {
+            ...newState.activeSkills[action.itemId],
+            lastUsed: now,
+            cooldownRemaining: cooldown * 60,
+            durationRemaining: duration * 60,
+          };
+        }
+        
+        newState.totalClickPower = calculateClickPower(newState);
+        newState.totalAutoProduction = calculateAutoProduction(newState);
       }
       
-      // 检查是否是主动技能
-      let skillEffect: MultiplierEffect | null = null;
-      if (item.effect.type === 'multiplier' && item.effect.duration && item.effect.cooldown) {
-        skillEffect = item.effect;
-      } else if (item.effect.type === 'hybrid') {
-        const found = item.effect.effects.find(e => 
-          e.type === 'multiplier' && e.duration && e.cooldown
-        );
-        if (found) skillEffect = found;
+      // 道具18: 鴨界之門 - 进入超鸭维度，暂时所有收益×3
+      if (action.itemId === 18) {
+        const multiplier = getItemEffectValue(UPGRADE_ITEMS[17], level);
+        const duration = 30; // 假设30秒持续
+        const cooldown = 120; // 假设120秒CD
+        
+        if (skill && skill.durationRemaining && skill.durationRemaining > 0) {
+          return state; // 正在激活中
+        }
+        
+        if (skill) {
+          const timeSinceLastUse = skill.lastUsed > 0 ? (now - skill.lastUsed) / 1000 : Infinity;
+          if (timeSinceLastUse < cooldown) {
+            return state; // 还在冷却中
+          }
+        }
+        
+        newState = { ...state };
+        newState.activeMultiplier *= multiplier;
+        newState.multiplierTimer = duration * 60;
+        
+        if (!newState.activeSkills[action.itemId]) {
+          newState.activeSkills[action.itemId] = {
+            lastUsed: now,
+            cooldownRemaining: cooldown * 60,
+            durationRemaining: duration * 60,
+          };
+        } else {
+          newState.activeSkills[action.itemId] = {
+            ...newState.activeSkills[action.itemId],
+            lastUsed: now,
+            cooldownRemaining: cooldown * 60,
+            durationRemaining: duration * 60,
+          };
+        }
+        
+        newState.totalClickPower = calculateClickPower(newState);
+        newState.totalAutoProduction = calculateAutoProduction(newState);
       }
       
-      if (!skillEffect) return state;
-      
-      const skill = state.activeSkills[action.itemId];
-      
-      // 检查冷却时间（使用帧数）
-      if (skill && skill.cooldownRemaining > 0) {
-        return state; // 还在冷却中
+      // 道具17: 時空鴨儀 - 暂停鸭力值累积
+      if (action.itemId === 17) {
+        const duration = getItemEffectValue(UPGRADE_ITEMS[16], level);
+        const cooldown = 300; // 假设5分钟CD
+        
+        if (skill && skill.durationRemaining && skill.durationRemaining > 0) {
+          return state; // 正在激活中
+        }
+        
+        if (skill) {
+          const timeSinceLastUse = skill.lastUsed > 0 ? (now - skill.lastUsed) / 1000 : Infinity;
+          if (timeSinceLastUse < cooldown) {
+            return state; // 还在冷却中
+          }
+        }
+        
+        newState = { ...state };
+        newState.timeFreezeActive = true;
+        newState.timeFreezeTimer = duration * 60;
+        
+        if (!newState.activeSkills[action.itemId]) {
+          newState.activeSkills[action.itemId] = {
+            lastUsed: now,
+            cooldownRemaining: cooldown * 60,
+            durationRemaining: duration * 60,
+          };
+        } else {
+          newState.activeSkills[action.itemId] = {
+            ...newState.activeSkills[action.itemId],
+            lastUsed: now,
+            cooldownRemaining: cooldown * 60,
+            durationRemaining: duration * 60,
+          };
+        }
+        
+        newState.totalClickPower = calculateClickPower(newState);
+        newState.totalAutoProduction = calculateAutoProduction(newState);
       }
-      
-      // 如果技能正在激活中，不能重复使用
-      if (skill && skill.durationRemaining && skill.durationRemaining > 0) {
-        return state;
-      }
-      
-      // 激活技能
-      newState = { ...state };
-      newState.activeMultiplier = skillEffect.multiplier;
-      newState.multiplierTimer = (skillEffect.duration || 0) * 60;
-      
-      newState.activeSkills[action.itemId] = {
-        lastUsed: Date.now(),
-        cooldownRemaining: (skillEffect.cooldown || 0) * 60, // 转换为帧数
-        durationRemaining: (skillEffect.duration || 0) * 60,
-      };
-      
-      // 更新计算缓存
-      newState.totalClickPower = calculateClickPower(newState);
-      newState.totalAutoProduction = calculateAutoProduction(newState);
       
       break;
     }
@@ -696,12 +688,12 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     
     case 'LOAD_GAME': {
       const loadedState = action.state;
-      // Convert array back to Set
       newState = {
         ...loadedState,
         purchasedItems: new Set(loadedState.purchasedItems || []),
         periodicTimers: loadedState.periodicTimers || {},
         activeSkills: loadedState.activeSkills || {},
+        itemLevels: loadedState.itemLevels || {},
       };
       // Recalculate
       newState.totalClickPower = calculateClickPower(newState);
@@ -713,8 +705,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return state;
   }
   
-  // Save state after each action
-  saveGameState(newState);
+  // Auto-save game state
+  if (action.type !== 'LOAD_GAME' && action.type !== 'RESET_GAME') {
+    saveGameState(newState);
+  }
   
   return newState;
 }

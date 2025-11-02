@@ -20,6 +20,35 @@ export interface UpgradeCost {
   costs: number[];
 }
 
+// 道具类型
+export type ItemType = 'click' | 'auto' | 'boost' | 'special';
+
+// 升级道具接口
+export interface UpgradeableItem {
+  id: number;
+  name: string;
+  type: ItemType;
+  description: string;
+  baseCost: number;           // 初始成本
+  costMultiplier: number;     // 成本倍增
+  baseEffect: number;         // 基础效果值
+  effectGrowth: number;       // 每级效果成长
+  maxLevel: number;           // 最大等级
+  icon: string;               // 图标（emoji或图片路径）
+  effectType: string;         // 效果类型描述（用于计算）
+  unlockStage: DuckStage;     // 解锁所需的鸭子阶段
+}
+
+export interface SpecialItem {
+  id: number;
+  name: string;
+  description: string;
+  cost: number;
+  effect: ItemEffect;
+  tier: 'early' | 'mid' | 'late' | 'endgame';
+  icon: string;
+}
+
 // 特殊道具效果类型
 export type ItemEffectType = 
   | 'clickChance'
@@ -33,7 +62,8 @@ export type ItemEffectType =
   | 'critRate'
   | 'critDamage'
   | 'instantUpgrade'
-  | 'staminaReduction';
+  | 'staminaReduction'
+  | 'sacredResonance';
 
 export interface ClickChanceEffect {
   type: 'clickChance';
@@ -52,7 +82,7 @@ export interface ComboEffect {
   clickBonus: number;
   comboThreshold: number;
   comboBonus: number;
-  comboEffect?: string; // 'bouncyMode' 等
+  comboEffect?: string;
   duration?: number;
   multiplier?: number;
 }
@@ -68,7 +98,7 @@ export interface MultiplierEffect {
 export interface PeriodicEffect {
   type: 'periodic';
   interval: number;
-  bonus: number | [number, number]; // 固定值或随机范围
+  bonus: number | [number, number];
   effectName?: string;
 }
 
@@ -104,6 +134,13 @@ export interface StaminaReductionEffect {
   multiplier: number;
 }
 
+export interface SacredResonanceEffect {
+  type: 'sacredResonance';
+  probability: number;
+  multiplier: number;
+  duration: number;
+}
+
 export interface HybridEffect {
   type: 'hybrid';
   effects: Array<
@@ -116,6 +153,7 @@ export interface HybridEffect {
     | InstantUpgradeEffect
     | StaminaReductionEffect
     | PeriodicEffect
+    | SacredResonanceEffect
   >;
 }
 
@@ -131,17 +169,8 @@ export type ItemEffect =
   | CritRateEffect
   | CritDamageEffect
   | InstantUpgradeEffect
-  | StaminaReductionEffect;
-
-export interface SpecialItem {
-  id: number;
-  name: string;
-  description: string;
-  cost: number;
-  effect: ItemEffect;
-  tier: 'early' | 'mid' | 'late' | 'endgame';
-  icon: string;
-}
+  | StaminaReductionEffect
+  | SacredResonanceEffect;
 
 export interface GameState {
   quack: number;
@@ -149,11 +178,10 @@ export interface GameState {
   stage: DuckStage;
   stageLevel: number; // 0-4, current upgrade level within stage
   
-  // 可升级道具
-  clickerLevel: number;      // 鸭点击器等级
-  autoLevel: number;         // 鸭自动机等级
+  // 可升级道具等级
+  itemLevels: Record<number, number>; // itemId -> level
   
-  // 特殊道具（已购买列表）
+  // 特殊道具（已购买列表，保留兼容）
   purchasedItems: Set<number>;  // 已购买的道具 ID
   
   // 计算缓存
@@ -180,9 +208,21 @@ export interface GameState {
   bouncyModeActive: boolean;
   bouncyModeTimer: number;
   
+  // 神圣共鸣状态
+  sacredResonanceActive: boolean;
+  sacredResonanceTimer: number;
+  
+  // 閃電鴨核状态（点击时暂时提升自动生产）
+  lightningBoostActive: boolean;
+  lightningBoostTimer: number;
+  lightningBoostMultiplier: number;
+  
+  // 時空鴨儀状态（暂停鸭力值增长）
+  timeFreezeActive: boolean;
+  timeFreezeTimer: number;
+  
   // 连击系统
   comboCount: number;
-  lastClickTime: number;
   
   // Game status
   gameOver: boolean;
@@ -194,10 +234,7 @@ export type GameAction =
   | { type: 'CLICK' }
   | { type: 'TICK' }
   | { type: 'UPGRADE' }
-  | { type: 'UPGRADE_CLICKER' }
-  | { type: 'UPGRADE_AUTO' }
-  | { type: 'PURCHASE_ITEM'; itemId: number }
+  | { type: 'UPGRADE_ITEM'; itemId: number }
   | { type: 'USE_ACTIVE_SKILL'; itemId: number }
   | { type: 'RESET_GAME' }
   | { type: 'LOAD_GAME'; state: GameState };
-
