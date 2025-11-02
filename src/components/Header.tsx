@@ -1,6 +1,6 @@
 import { GameState } from '../types';
 import { formatNumber } from '../utils';
-import { UPGRADE_COSTS } from '../gameData';
+import { UPGRADE_COSTS, getMaxDuckPower, getStageIcon, getStageDescription } from '../gameData';
 
 interface HeaderProps {
   state: GameState;
@@ -9,10 +9,13 @@ interface HeaderProps {
 
 export default function Header({ state, onUpgrade }: HeaderProps) {
   const costs = UPGRADE_COSTS[state.stage];
-  const canUpgrade = state.stageLevel < costs.length && state.quack >= costs[state.stageLevel];
-  const isMaxStage = state.stage === '至聖先鴨';
+  const isStageComplete = state.stageLevel >= costs.length;
+  const canUpgrade = isStageComplete || (state.stageLevel < costs.length && state.quack >= costs[state.stageLevel]);
+  const isMaxStage = state.stage === '絕對鴨';
 
-  const duckPowerPercent = (state.duckPower / 60) * 100;
+  const maxDuckPower = getMaxDuckPower(state.stage);
+  const duckPowerFloor = Math.floor(state.duckPower);
+  const duckPowerPercent = (duckPowerFloor / maxDuckPower) * 100;
   const isDangerZone = duckPowerPercent >= 80;
 
   return (
@@ -27,10 +30,18 @@ export default function Header({ state, onUpgrade }: HeaderProps) {
           </div>
 
           {/* Duck Stage and Upgrade */}
-          <div className="flex items-center justify-center gap-4 flex-wrap">
-            <div className="text-xl md:text-2xl font-semibold text-yellow-700">
-              {state.stage} {state.stageLevel > 0 && `(升級 ${state.stageLevel}/5)`}
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex items-center justify-center gap-3 flex-wrap">
+              <span className="text-3xl md:text-4xl">{getStageIcon(state.stage)}</span>
+              <div className="text-xl md:text-2xl font-semibold text-yellow-700">
+                {state.stage} {state.stageLevel > 0 && `(升級 ${state.stageLevel}/5)`}
+              </div>
             </div>
+            {getStageDescription(state.stage) && (
+              <div className="text-sm text-gray-600 italic text-center">
+                "{getStageDescription(state.stage)}"
+              </div>
+            )}
             {!isMaxStage && (
               <button
                 onClick={onUpgrade}
@@ -41,9 +52,11 @@ export default function Header({ state, onUpgrade }: HeaderProps) {
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 }`}
               >
-                {canUpgrade 
-                  ? `升級 (${formatNumber(costs[state.stageLevel])} Quack)` 
-                  : `需要 ${formatNumber(costs[state.stageLevel])} Quack`}
+                {isStageComplete
+                  ? '進入下一階段 →'
+                  : canUpgrade 
+                    ? `升級 (${formatNumber(costs[state.stageLevel])} Quack)` 
+                    : `需要 ${formatNumber(costs[state.stageLevel])} Quack`}
               </button>
             )}
           </div>
@@ -53,7 +66,7 @@ export default function Header({ state, onUpgrade }: HeaderProps) {
             <div className="flex items-center justify-between mb-1">
               <span className="text-sm font-medium text-gray-700">鴨力值:</span>
               <span className={`text-sm font-bold ${isDangerZone ? 'text-red-600' : 'text-gray-700'}`}>
-                {Math.floor(state.duckPower)}/60
+                {duckPowerFloor}/{maxDuckPower}
               </span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-6 overflow-hidden">
@@ -74,9 +87,9 @@ export default function Header({ state, onUpgrade }: HeaderProps) {
           </div>
 
           {/* Auto Quack Info */}
-          {state.autoQuackPerSecond > 0 && (
+          {state.totalAutoProduction > 0 && (
             <div className="text-center text-sm text-green-600">
-              每秒自動獲得: {formatNumber(state.autoQuackPerSecond)} Quack
+              每秒自動獲得: {formatNumber(state.totalAutoProduction)} Quack
             </div>
           )}
         </div>

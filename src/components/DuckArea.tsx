@@ -62,10 +62,20 @@ export default function DuckArea({ state, onDuckClick, clickQuackGained = 0 }: D
   const getDuckEmoji = () => {
     switch (state.stage) {
       case '鴨蛋': return '🥚';
-      case '黃鴨': return '🦆';
-      case '白鴨': return '🦢';
+      case '黃鴨': return '🐥';
+      case '白鴨': return '🦆';
       case '成年鴨': return '🦆';
-      case '至聖先鴨': return '👑';
+      case '至聖先鴨': return '✨';
+      case '天啟鴨': return '⚡';
+      case '星界鴨': return '🌟';
+      case '混沌鴨': return '🌀';
+      case '永恆鴨': return '⏳';
+      case '超鴨神體': return '💎';
+      case '鴨界意志': return '🌌';
+      case '原初之鴨': return '🔮';
+      case '鴨神皇': return '👑';
+      case '多元鴨體': return '🌐';
+      case '絕對鴨': return '∞';
       default: return '🦆';
     }
   };
