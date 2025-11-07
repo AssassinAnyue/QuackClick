@@ -1,6 +1,5 @@
 import { useReducer, useEffect, useState } from 'react';
 import { gameReducer, INITIAL_STATE } from './gameReducer';
-import { GameState } from './types';
 import { loadGameState } from './utils';
 import Header from './components/Header';
 import DuckArea from './components/DuckArea';

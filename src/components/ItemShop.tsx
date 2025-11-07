@@ -1,7 +1,6 @@
 import { GameState, GameAction } from '../types';
-import { formatNumber } from '../utils';
+import { formatNumber, getImagePath } from '../utils';
 import { UPGRADE_ITEMS, getItemUpgradeCost, getItemEffectValue, getItemNextEffectValue } from '../upgradeItems';
-import { STAGE_ORDER } from '../gameData';
 
 interface ItemShopProps {
   state: GameState;
@@ -69,10 +68,8 @@ export default function ItemShop({ state, dispatch }: ItemShopProps) {
     const currentLevel = state.itemLevels[item.id] || 0;
     const canUpgrade = currentLevel < item.maxLevel;
     
-    // 检查道具是否解锁
-    const currentStageIndex = STAGE_ORDER.indexOf(state.stage);
-    const unlockStageIndex = STAGE_ORDER.indexOf(item.unlockStage);
-    const isUnlocked = currentStageIndex >= unlockStageIndex;
+    // 所有道具都从开始解锁（移除解锁检查）
+    const isUnlocked = true;
     
     // 计算升级成本（考虑折扣）
     let upgradeCost = canUpgrade ? getItemUpgradeCost(item, currentLevel) : 0;
@@ -110,29 +107,6 @@ export default function ItemShop({ state, dispatch }: ItemShopProps) {
     const hasActiveSkill = isActiveSkill(item.id) && currentLevel > 0;
     const skillStatus = hasActiveSkill ? getSkillStatus(item.id) : null;
 
-    // 如果未解锁，返回锁定状态
-    if (!isUnlocked) {
-      return (
-        <div
-          key={item.id}
-          className="rounded-lg border-2 border-gray-300 bg-gray-50 p-4 opacity-50 relative overflow-hidden"
-        >
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-2xl grayscale">{item.icon}</span>
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-base text-gray-500">{item.name}</span>
-              </div>
-              <p className="text-xs mt-1 text-gray-500 line-through">{item.description}</p>
-            </div>
-          </div>
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-50">
-            <span className="text-sm font-bold text-white">🔒 需要 {item.unlockStage} 階段</span>
-          </div>
-        </div>
-      );
-    }
-
     return (
       <div
         key={item.id}
@@ -146,7 +120,27 @@ export default function ItemShop({ state, dispatch }: ItemShopProps) {
       >
         <div className="flex items-start justify-between gap-3 mb-2">
           <div className="flex items-center gap-2 flex-1">
-            <span className="text-2xl">{item.icon}</span>
+            {item.icon.startsWith('/') ? (
+              <img
+                src={getImagePath(item.icon)}
+                alt={item.name}
+                className="w-8 h-8 object-contain"
+                onError={(e) => {
+                  // 如果图片加载失败，显示默认emoji
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  const parent = target.parentElement;
+                  if (parent) {
+                    const emoji = document.createElement('span');
+                    emoji.className = 'text-2xl';
+                    emoji.textContent = '🦆';
+                    parent.insertBefore(emoji, target);
+                  }
+                }}
+              />
+            ) : (
+              <span className="text-2xl">{item.icon}</span>
+            )}
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <span className="font-bold text-base">{item.name}</span>

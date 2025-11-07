@@ -1,5 +1,6 @@
 {
   "name": "cookie-clicker-duck-game",
+  "homepage": ".",
   "version": "1.0.0",
   "description": "Cookie Clicker style duck clicking game",
   "private": true,

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { GameState } from '../types';
 import { formatNumber } from '../utils';
-import { STAGE_ORDER } from '../gameData';
+import { getStageImage } from '../gameData';
 
 interface DuckAreaProps {
   state: GameState;
@@ -93,11 +93,7 @@ export default function DuckArea({ state, onDuckClick, clickQuackGained = 0 }: D
 
   // 获取鸭子图片路径
   const getDuckImage = () => {
-    const stageIndex = STAGE_ORDER.indexOf(state.stage);
-    // 图片编号从1开始，有12张图片
-    // 如果阶段超过12，使用第12张图片（最后一幅）
-    const imageNumber = Math.min(stageIndex + 1, 12);
-    return `/Image/Duck/${imageNumber}.png`;
+    return getStageImage(state.stage);
   };
 
   return (
